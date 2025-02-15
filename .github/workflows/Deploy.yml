@@ -3,7 +3,7 @@ name: Deploy to AWS EC2
 on:
   push:
     branches:
-      - main
+      - main  # Trigger deployment when changes are pushed to the 'master' branch
 
 jobs:
   deploy:
@@ -18,51 +18,32 @@ jobs:
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" | sed 's/\r$//' > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          echo -e "Host *\n\tStrictHostKeyChecking no\n\tUserKnownHostsFile=/dev/null" >> ~/.ssh/config
-
-      # Step 3: Debug SSH Key (Optional, for troubleshooting)
-      - name: Debug SSH Key
-        run: |
-          ls -lah ~/.ssh
-          cat ~/.ssh/id_rsa | head -n 3 | sed 's/./*/g'
-
-      # Step 4: Test SSH Connection
-      - name: Test SSH Connection
-        run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@54.159.195.247 "echo '✅ SSH connection successful'"
-
-      # Step 5: Deploy to EC2
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+      # Step 3: Deploy and manage code on EC2
       - name: Deploy to EC2
         run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@54.159.195.247 << 'EOF'
-            set -e  # Exit if any command fails
-            
+          ssh ubuntu@54.159.195.247 << 'EOF'
             # Ensure the repo is present or clone it
             if [ ! -d "/home/ubuntu/docker-todo" ]; then
-              echo "Cloning repository..."
-              git clone git@github.com:Marufp10/todo-list-app.git /home/ubuntu/docker-todo
-            else
-              echo "Repository already exists. Pulling latest changes..."
-              cd /home/ubuntu/docker-todo
-              git pull origin main
+              git clone git@github.com:marufp10/Project.git /home/ubuntu/docker-todo
             fi
 
+            # Always pull the latest code before proceeding
+            cd /home/ubuntu/docker-todo
+            git pull origin main
+
             # Ensure Docker has permission for the current user
-            echo "Setting Docker permissions..."
             sudo chmod 666 /var/run/docker.sock
 
             # Rebuild the Docker image with the latest changes
-            echo "Rebuilding Docker image..."
             sudo docker build -t todo-list-app .
 
             # Stop and remove the old container if it's running
-            echo "Stopping old container..."
             sudo docker stop todo-list-app || true
             sudo docker rm todo-list-app || true
 
             # Run the new container with updated code
-            echo "Starting new container..."
             sudo docker run -d -p 80:3000 --name todo-list-app todo-list-app
           EOF
